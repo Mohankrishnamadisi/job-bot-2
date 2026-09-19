@@ -3,7 +3,7 @@
 const logger = require('../utils/logger');
 const supabaseClient = require('../database/supabaseClient');
 
-const SYSTEM_USER_ID = '8553ef54-e14f-4f83-aca8-e017702a6fad';
+const SYSTEM_USER_ID = '0443dc8c-136c-4a83-b484-28435d9025b0';
 const DEFAULT_JOB_TYPE = 'Full-Time';
 const DEFAULT_WORK_MODE = 'Onsite';
 

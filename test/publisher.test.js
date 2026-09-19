@@ -113,7 +113,7 @@ test('publishPendingJobs maps processed jobs to jobs and marks them published', 
   assert.equal(inserts[0].experience, '3+ years');
   assert.equal(inserts[0].education, "Bachelor's Degree");
   assert.equal(inserts[0].application_link, 'https://example.com/apply');
-  assert.equal(inserts[0].posted_by, '8553ef54-e14f-4f83-aca8-e017702a6fad');
+  assert.equal(inserts[0].posted_by, '0443dc8c-136c-4a83-b484-28435d9025b0');
   assert.equal(inserts[0].status, 'published');
 });
 
