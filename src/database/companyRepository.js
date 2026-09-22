@@ -3,7 +3,7 @@
 const supabase = require('./supabaseClient');
 const logger = require('../utils/logger');
 
-const SUPPORTED_COMPANY_NAMES = ['Amazon', 'Microsoft', 'IBM', 'Wipro', 'Cognizant', 'Capgemini', 'Infosys', 'Deloitte', 'Cisco', 'HCLTech', 'TCS'];
+const SUPPORTED_COMPANY_NAMES = ['Amazon', 'Microsoft', 'IBM', 'Wipro', 'Cognizant', 'Capgemini', 'Infosys', 'Deloitte', 'Cisco', 'NTT DATA', 'HCLTech', 'TCS'];
 
 const DEFAULT_CAREER_URLS = {
   amazon: 'https://www.amazon.jobs/en',
@@ -15,6 +15,7 @@ const DEFAULT_CAREER_URLS = {
   infosys: 'https://careers.infosys.com/',
   deloitte: 'https://apply.deloitte.com/en_US/careers/SearchJobs',
   cisco: 'https://careers.cisco.com/global/en/search-results',
+  nttdata: 'https://careers.nttdata.com/global/en/search-results',
   hcltech: 'https://careers.hcltech.com/',
   tcs: 'https://ibegin.tcsapps.com/candidate/jobs/search',
 };
