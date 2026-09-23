@@ -11,6 +11,7 @@ const { scrapeCiscoJobs } = require('./cisco');
 const { scrapeNttDataJobs } = require('./nttdata');
 const { scrapeLtimindtreeJobs } = require('./ltimindtree');
 const { scrapeMphasisJobs } = require('./mphasis');
+const { scrapePersistentJobs } = require('./persistent');
 const logger = require('../utils/logger');
 const { filterJobsWithinRecentCutoff } = require('../utils/recentJobPolicy');
 
@@ -23,6 +24,7 @@ const SCRAPER_REGISTRY = {
   nttdata: scrapeNttDataJobs,
   ltimindtree: scrapeLtimindtreeJobs,
   mphasis: scrapeMphasisJobs,
+  persistent: scrapePersistentJobs,
   microsoft: () => scrapeMicrosoftJobs('', '', false),
   ibm: scrapeIbmJobs,
   infosys: async () => {
@@ -41,7 +43,7 @@ const SCRAPER_REGISTRY = {
   wipro: scrapeWiproJobs,
 };
 
-const DEFAULT_SCRAPER_ORDER = ['microsoft', 'ibm', 'amazon', 'wipro', 'cognizant', 'capgemini', 'infosys', 'deloitte', 'cisco', 'nttdata', 'ltimindtree', 'mphasis'];
+const DEFAULT_SCRAPER_ORDER = ['microsoft', 'ibm', 'amazon', 'wipro', 'cognizant', 'capgemini', 'infosys', 'deloitte', 'cisco', 'nttdata', 'ltimindtree', 'mphasis', 'persistent'];
 
 function getRegisteredScraperKeys() {
   const registryKeys = Object.keys(SCRAPER_REGISTRY);
