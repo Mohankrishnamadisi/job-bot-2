@@ -13,6 +13,7 @@ const { scrapeLtimindtreeJobs } = require('./ltimindtree');
 const { scrapeMphasisJobs } = require('./mphasis');
 const { scrapePersistentJobs } = require('./persistent');
 const { scrapeGoogleJobs } = require('./google');
+const { scrapeSapJobs } = require('./sap');
 const logger = require('../utils/logger');
 const { filterJobsWithinRecentCutoff } = require('../utils/recentJobPolicy');
 
@@ -43,9 +44,10 @@ const SCRAPER_REGISTRY = {
     };
   },
   wipro: scrapeWiproJobs,
+  sap: scrapeSapJobs,
 };
 
-const DEFAULT_SCRAPER_ORDER = ['microsoft', 'ibm', 'amazon', 'wipro', 'cognizant', 'capgemini', 'infosys', 'deloitte', 'cisco', 'nttdata', 'ltimindtree', 'mphasis', 'persistent', 'google'];
+const DEFAULT_SCRAPER_ORDER = ['microsoft', 'google', 'ibm', 'sap', 'amazon', 'wipro', 'cognizant', 'capgemini', 'infosys', 'deloitte', 'cisco', 'nttdata', 'ltimindtree', 'mphasis', 'persistent'];
 
 function getRegisteredScraperKeys() {
   const registryKeys = Object.keys(SCRAPER_REGISTRY);
@@ -70,8 +72,11 @@ async function runScrapers(urls = [], options = {}) {
 
       if (registeredScraper) {
         logger.info(`Starting registered scraper for ${key}`);
-        const response = await registeredScraper('', '', false, { signal });
-        const jobs = Array.isArray(response?.result) ? response.result : [];
+        const maxJobs = Number(process.env.MAX_JOBS_PER_COMPANY_RUN) || 100;
+        const response = key === 'microsoft'
+          ? await registeredScraper('', '', false)
+          : await registeredScraper('', '', false, { signal, maxJobs });
+        const jobs = Array.isArray(response?.result) ? response.result.slice(0, maxJobs) : [];
         const stats = response?.stats || {
           pageCount: 0,
           listingJobsFetched: jobs.length,
