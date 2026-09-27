@@ -3,11 +3,12 @@
 const supabase = require('./supabaseClient');
 const logger = require('../utils/logger');
 
-const SUPPORTED_COMPANY_NAMES = ['Amazon', 'Microsoft', 'IBM', 'SAP', 'Wipro', 'Cognizant', 'Capgemini', 'Infosys', 'Deloitte', 'Cisco', 'NTT DATA', 'LTIMindtree', 'Mphasis', 'HCLTech', 'TCS', 'Google'];
+const SUPPORTED_COMPANY_NAMES = ['Amazon', 'Microsoft','HSBC', 'IBM', 'SAP', 'Wipro', 'Cognizant', 'Capgemini', 'Infosys', 'Deloitte', 'Cisco', 'NTT DATA', 'LTIMindtree', 'Mphasis', 'HCLTech','Google'];
 
 const DEFAULT_CAREER_URLS = {
   amazon: 'https://www.amazon.jobs/en',
   microsoft: 'https://careers.microsoft.com/us/en/search-results',
+  hsbc: 'https://portal.careers.hsbc.com/careers?hl=en',
   ibm: 'https://www.ibm.com/careers/search',
   wipro: 'https://careers.wipro.com/',
   cognizant: 'https://careers.cognizant.com/global/en/search-results',
@@ -19,7 +20,6 @@ const DEFAULT_CAREER_URLS = {
   ltimindtree: 'https://www.ltm.com/careers',
   mphasis: 'https://careers.mphasis.com/home.html',
   hcltech: 'https://careers.hcltech.com/',
-  tcs: 'https://ibegin.tcsapps.com/candidate/jobs/search',
   google: 'https://www.google.com/about/careers/applications/jobs/results/',
   sap: 'https://careers.sap.com/search/?locale=en_US',
 };
