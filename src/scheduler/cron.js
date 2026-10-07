@@ -65,7 +65,7 @@ function logCompanyTiming(target, stats) {
   );
 }
 
-async function runJobPipeline() {
+async function runJobPipeline(options = {}) {
   if (pipelineRunning) {
     logger.warn('Job pipeline already running; skipping overlapping execution');
     return;
@@ -115,6 +115,7 @@ async function runJobPipeline() {
 
         const timeoutMs = Number(companyScraperTimeoutMs) || 120000;
         const companyDeadline = Date.now() + timeoutMs;
+        let scraperPromise;
 
         try {
           let scrapedJobs = [];
@@ -126,8 +127,9 @@ async function runJobPipeline() {
           }, timeoutMs);
 
           try {
+            scraperPromise = runScrapers([target], { signal: controller.signal });
             const result = await Promise.race([
-              runScrapers([target], { signal: controller.signal }),
+              scraperPromise,
               new Promise((_, reject) => {
                 controller.signal.addEventListener('abort', () => reject(new Error(`Company scraper timed out after ${timeoutMs}ms`)), { once: true });
               }),
@@ -188,6 +190,14 @@ async function runJobPipeline() {
 
           logCompanyTiming(target, { ...timingStats, durationMs: Date.now() - companyStartTime, stopReason: timingStats.stopReason || 'completed' });
         } catch (error) {
+          if (options.awaitTimedOutScrapers && timingStats.stopReason === 'timeout' && scraperPromise) {
+            try {
+              await scraperPromise;
+            } catch (scraperError) {
+              logger.error(`Timed-out scraper ${target} did not finish cleanly: ${scraperError.message}`);
+            }
+          }
+
           if (error && /timed out|timeout/i.test(error.message)) {
             timingStats.stopReason = 'timeout';
           } else {
@@ -277,6 +287,9 @@ async function runJobPipeline() {
     logger.info(`Pipeline duration ms: ${durationMs}`);
   } catch (error) {
     logger.error(`Scheduled pipeline error: ${error.message}`);
+    if (options.throwOnError) {
+      throw error;
+    }
   } finally {
     pipelineRunning = false;
   }
