@@ -134,7 +134,8 @@ test('mergeEnrichment generates professional defaults when the source data is we
 
   assert.ok(result.description && result.description.length > 50);
   assert.ok(result.summary && result.summary.length > 20);
-  assert.deepEqual(result.skills, ['React', 'TypeScript', 'Redux', 'REST API', 'HTML', 'CSS', 'JavaScript']);
+  assert.deepEqual(result.skills, []);
+  assert.doesNotMatch(result.description, /JavaScript|TypeScript|Redux|REST API/);
   assert.equal(result.experience, 'Any Experience');
   assert.equal(result.salary, 'Competitive Salary');
   assert.equal(result.employment_type, 'Full Time');

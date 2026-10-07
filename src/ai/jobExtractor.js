@@ -115,46 +115,6 @@ function isPoorDescription(description) {
   return wordCount < 80;
 }
 
-function inferSkillsFromTitle(title) {
-  const normalized = String(title || '').trim().toLowerCase();
-  if (!normalized) {
-    return ['JavaScript', 'SQL', 'Git'];
-  }
-
-  if (normalized.includes('react')) {
-    return ['React', 'TypeScript', 'Redux', 'REST API', 'HTML', 'CSS', 'JavaScript'];
-  }
-  if (normalized.includes('python')) {
-    return ['Python', 'Django', 'REST API', 'SQL', 'Git'];
-  }
-  if (normalized.includes('java')) {
-    return ['Java', 'Spring Boot', 'Hibernate', 'REST API', 'SQL'];
-  }
-  if (normalized.includes('node') || normalized.includes('javascript')) {
-    return ['Node.js', 'JavaScript', 'Express.js', 'REST API', 'Git'];
-  }
-  if (normalized.includes('dotnet') || normalized.includes('c#') || normalized.includes('csharp')) {
-    return ['.NET', 'C#', 'ASP.NET', 'SQL', 'Git'];
-  }
-  if (normalized.includes('devops') || normalized.includes('sre') || normalized.includes('cloud')) {
-    return ['Linux', 'Docker', 'Kubernetes', 'AWS', 'CI/CD'];
-  }
-  if (normalized.includes('data engineer') || normalized.includes('analytics engineer')) {
-    return ['Python', 'SQL', 'ETL', 'Spark', 'Airflow'];
-  }
-  if (normalized.includes('qa') || normalized.includes('quality assurance') || normalized.includes('test')) {
-    return ['Automation Testing', 'Selenium', 'Playwright', 'Cypress', 'Git'];
-  }
-  if (normalized.includes('sales')) {
-    return ['Salesforce', 'CRM', 'Lead Generation', 'Pipeline Management', 'Negotiation'];
-  }
-  if (normalized.includes('design') || normalized.includes('ui') || normalized.includes('ux')) {
-    return ['Figma', 'UI Design', 'UX Design', 'Design Systems', 'Prototyping'];
-  }
-
-  return ['JavaScript', 'SQL', 'Git'];
-}
-
 function normalizeDescriptionText(value) {
   if (!hasMeaningfulValue(value)) {
     return '';
@@ -242,7 +202,7 @@ function generateDescription(job) {
   const title = job?.title || 'professional role';
   const company = job?.company || 'a growing organization';
   const location = job?.location || 'a dynamic location';
-  const skills = Array.isArray(job?.skills) && job.skills.length ? job.skills.slice(0, 6).join(', ') : inferSkillsFromTitle(title).slice(0, 6).join(', ');
+  const skills = Array.isArray(job?.skills) ? job.skills.slice(0, 6).join(', ') : '';
   const responsibilities = Array.isArray(job?.responsibilities) && job.responsibilities.length
     ? job.responsibilities.slice(0, 3).join(' ')
     : 'drive execution, collaborate across teams, and deliver high-quality outcomes';
@@ -257,7 +217,8 @@ function generateDescription(job) {
 
   const paragraph1 = `We are hiring a ${roleTitle} to join ${company} in ${location}. This ${employmentType.toLowerCase()} position is designed for professionals with ${experience.toLowerCase()} who are ready to contribute to high-impact projects and help deliver reliable, well-engineered outcomes.`;
   const paragraph2 = `The successful candidate will ${responsibilities.toLowerCase()}, work closely with cross-functional teams, and bring a structured approach to problem solving, execution, and continuous improvement. The role requires strong ownership, clear communication, and the ability to adapt quickly in a fast-paced environment.`;
-  const paragraph3 = `Candidates should demonstrate practical experience with ${skills} and a strong understanding of modern delivery practices. A background aligned with ${education.toLowerCase()} is preferred, along with the curiosity and discipline to learn, build, and improve as the business evolves.`;
+  const skillsRequirement = skills ? `Candidates should demonstrate practical experience with ${skills} and ` : 'Candidates should demonstrate ';
+  const paragraph3 = `${skillsRequirement}a strong understanding of modern delivery practices. A background aligned with ${education.toLowerCase()} is preferred, along with the curiosity and discipline to learn, build, and improve as the business evolves.`;
   const paragraph4 = `We offer a collaborative workplace with ${benefits.toLowerCase()}, a ${workMode.toLowerCase()} working arrangement, and meaningful opportunities for growth, development, and long-term career progression within the organization.`;
 
   return [paragraph1, paragraph2, paragraph3, paragraph4].join('\n\n');
@@ -273,11 +234,11 @@ function generateSummary(job, description) {
 
 function generateResponsibilities(job) {
   const title = job?.title || 'this role';
-  const skills = Array.isArray(job?.skills) && job.skills.length ? job.skills.slice(0, 4).join(', ') : inferSkillsFromTitle(title).slice(0, 4).join(', ');
+  const skills = Array.isArray(job?.skills) ? job.skills.slice(0, 4).join(', ') : '';
   return [
     `Design, build, and improve high-quality solutions for ${title} initiatives`,
     `Collaborate with cross-functional teams to deliver reliable features and maintain strong technical standards`,
-    `Work with modern tools and technologies such as ${skills} to support efficient delivery`,
+    skills ? `Work with modern tools and technologies such as ${skills} to support efficient delivery` : 'Work with appropriate tools and technologies to support efficient delivery',
     `Contribute to code quality, documentation, and continuous improvement across the team`,
   ];
 }
@@ -341,7 +302,7 @@ function fillMissingFields(job, aiResponse = {}) {
       } else if (typeof aiValue === 'string' && aiValue.trim() !== '') {
         mergedJob.skills = [aiValue.trim()];
       } else {
-        mergedJob.skills = inferSkillsFromTitle(mergedJob.title);
+        mergedJob.skills = [];
       }
       return;
     }
@@ -458,7 +419,7 @@ function fillMissingFields(job, aiResponse = {}) {
   }
 
   if (!hasMeaningfulValue(mergedJob.skills)) {
-    mergedJob.skills = inferSkillsFromTitle(mergedJob.title).slice(0, 8);
+    mergedJob.skills = [];
   }
 
   if (!hasMeaningfulValue(mergedJob.experience)) {
@@ -634,6 +595,5 @@ module.exports = {
   generateSummary,
   generateResponsibilities,
   generateBenefits,
-  inferSkillsFromTitle,
   fillMissingFields,
 };
