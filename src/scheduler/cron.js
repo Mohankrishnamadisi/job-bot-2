@@ -65,7 +65,7 @@ function logCompanyTiming(target, stats) {
   );
 }
 
-async function runJobPipeline(options = {}) {
+async function runJobPipeline() {
   if (pipelineRunning) {
     logger.warn('Job pipeline already running; skipping overlapping execution');
     return;
@@ -115,7 +115,6 @@ async function runJobPipeline(options = {}) {
 
         const timeoutMs = Number(companyScraperTimeoutMs) || 120000;
         const companyDeadline = Date.now() + timeoutMs;
-        let scraperPromise;
 
         try {
           let scrapedJobs = [];
@@ -127,9 +126,8 @@ async function runJobPipeline(options = {}) {
           }, timeoutMs);
 
           try {
-            scraperPromise = runScrapers([target], { signal: controller.signal });
             const result = await Promise.race([
-              scraperPromise,
+              runScrapers([target], { signal: controller.signal }),
               new Promise((_, reject) => {
                 controller.signal.addEventListener('abort', () => reject(new Error(`Company scraper timed out after ${timeoutMs}ms`)), { once: true });
               }),
@@ -190,14 +188,6 @@ async function runJobPipeline(options = {}) {
 
           logCompanyTiming(target, { ...timingStats, durationMs: Date.now() - companyStartTime, stopReason: timingStats.stopReason || 'completed' });
         } catch (error) {
-          if (options.awaitTimedOutScrapers && timingStats.stopReason === 'timeout' && scraperPromise) {
-            try {
-              await scraperPromise;
-            } catch (scraperError) {
-              logger.error(`Timed-out scraper ${target} did not finish cleanly: ${scraperError.message}`);
-            }
-          }
-
           if (error && /timed out|timeout/i.test(error.message)) {
             timingStats.stopReason = 'timeout';
           } else {
@@ -287,9 +277,6 @@ async function runJobPipeline(options = {}) {
     logger.info(`Pipeline duration ms: ${durationMs}`);
   } catch (error) {
     logger.error(`Scheduled pipeline error: ${error.message}`);
-    if (options.throwOnError) {
-      throw error;
-    }
   } finally {
     pipelineRunning = false;
   }
