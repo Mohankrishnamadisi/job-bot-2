@@ -9,6 +9,7 @@ const { parseEnrichmentResponse } = require('../ai/responseParser');
 const { callOllama } = require('../ai/ollamaClient');
 const { callGroq, GroqQuotaError } = require('../ai/groqClient');
 const { publishPendingJobs } = require('../publisher/publisher');
+const { syncJobsToDb1 } = require('../sync/syncJobsToDb1');
 const { normalizeWorkMode, normalizeJobWorkMode } = require('../utils/workModeNormalizer');
 const { normalizeExperience, normalizeEmploymentType, normalizeLocationForWorkMode } = require('../utils/processedJobNormalizer');
 const { generateCategory } = require('../utils/categoryNormalizer');
@@ -626,8 +627,17 @@ async function runAiWorker(options = {}) {
     if (jobsCompleted > 0) {
       loggerInstance.info('✓ Batch complete: publishing pending jobs once');
       try {
-        await publishPendingJobs({ logger: loggerInstance, supabase });
-        loggerInstance.info('✓ Publisher completed after batch');
+        const publishResult = await publishPendingJobs({ logger: loggerInstance, supabase });
+        if (publishResult?.error) {
+          loggerInstance.error(`Publisher failed after batch: ${publishResult.error}`);
+        } else {
+          loggerInstance.info('✓ Publisher completed after batch');
+          try {
+            await (options.syncJobsToDb1 || syncJobsToDb1)({ db2: supabase, logger: loggerInstance });
+          } catch (syncError) {
+            loggerInstance.error(`DB1 synchronization failed after publisher: ${syncError.message}`);
+          }
+        }
       } catch (publishError) {
         loggerInstance.error(`Publisher failed after batch: ${publishError.message}`);
       }
