@@ -19,7 +19,9 @@ function createFallbackSupabase() {
 }
 
 const supabase = supabaseUrl && supabaseServiceRoleKey
-  ? createClient(supabaseUrl, supabaseServiceRoleKey)
+  ? createClient(supabaseUrl, supabaseServiceRoleKey, {
+    realtime: { transport: ws },
+  })
   : createFallbackSupabase();
 
 module.exports = supabase;

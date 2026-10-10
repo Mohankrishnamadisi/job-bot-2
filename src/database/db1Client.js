@@ -1,6 +1,7 @@
 'use strict';
 
 const { createClient } = require('@supabase/supabase-js');
+const ws = require('ws');
 
 function createDb1Client(options = {}) {
   const url = (options.url ?? process.env.DB1_SUPABASE_URL)?.trim();
@@ -16,7 +17,9 @@ function createDb1Client(options = {}) {
     };
   }
 
-  return (options.createClient || createClient)(url, serviceRoleKey);
+  return (options.createClient || createClient)(url, serviceRoleKey, {
+    realtime: { transport: ws },
+  });
 }
 
 module.exports = createDb1Client();

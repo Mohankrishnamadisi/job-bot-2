@@ -197,6 +197,24 @@ test('missing DB1 credentials fail with a clear configuration error', async () =
   );
 });
 
+test('DB1 client uses the ws transport for Supabase Realtime', () => {
+  let receivedOptions;
+  const createClient = (url, serviceRoleKey, options) => {
+    receivedOptions = { url, serviceRoleKey, options };
+    return {};
+  };
+
+  createDb1Client({
+    url: 'https://db1.example.com',
+    serviceRoleKey: 'service-role-key',
+    createClient,
+  });
+
+  assert.equal(receivedOptions.url, 'https://db1.example.com');
+  assert.equal(receivedOptions.serviceRoleKey, 'service-role-key');
+  assert.equal(receivedOptions.options.realtime.transport, require('ws'));
+});
+
 test('an individual DB1 insert failure does not block other jobs in the batch', async () => {
   const db1 = createDb1([], ['https://example.com/fails']);
   const result = await sync([
