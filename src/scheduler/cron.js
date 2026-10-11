@@ -1,6 +1,6 @@
 const cron = require('node-cron');
 const logger = require('../utils/logger');
-const { companyCareerUrls, scraperBatchSize, jobScrapeCron, companyScraperTimeoutMs } = require('../config/env');
+const { companyCareerUrls, scraperBatchSize, companyScraperTimeoutMs } = require('../config/env');
 const { runScrapers, getRegisteredScraperKeys } = require('../scrapers');
 const { deduplicateJobs } = require('../services/duplicateService');
 const { saveJobs } = require('../database/jobRepository');
@@ -21,9 +21,6 @@ try {
   logger.warn(`TCS import module unavailable: ${error.message}`);
 }
 
-const JOB_SCHEDULES = Array.isArray(jobScrapeCron) && jobScrapeCron.length > 0
-  ? jobScrapeCron
-  : [jobScrapeCron || '0 0 * * *'];
 const CONTINUOUS_PIPELINE_INTERVAL_MS = Number(process.env.PIPELINE_LOOP_MS || process.env.SCRAPE_INTERVAL_MS || 60 * 60 * 1000) || 60 * 60 * 1000;
 let pipelineRunning = false;
 let cycleNumber = 0;
@@ -326,14 +323,19 @@ async function runJobPipeline() {
 }
 
 function scheduleJobs() {
-  JOB_SCHEDULES.forEach((cronExpression) => {
-    cron.schedule(cronExpression, () => {
-      runJobPipeline();
+  if (process.env.ENABLE_CRON_SCRAPE === 'true') {
+    const cronExpressions = process.env.JOB_SCRAPE_CRON || '30 22 * * *';
+    cronExpressions.split(',').map((value) => value.trim()).filter(Boolean).forEach((cronExpression) => {
+      cron.schedule(cronExpression, () => {
+        runJobPipeline();
+      });
+      logger.info(`Scheduled additional job pipeline for cron expression: ${cronExpression}`);
     });
-    logger.info(`Scheduled job pipeline for cron expression: ${cronExpression}`);
-  });
+  } else {
+    logger.info('Additional cron-triggered scraping is disabled; using the continuous cycle only');
+  }
 
-  logger.info(`Continuous pipeline loop enabled; repeating every ${CONTINUOUS_PIPELINE_INTERVAL_MS}ms after cycle completion`);
+  logger.info(`Continuous pipeline loop enabled; repeating ${CONTINUOUS_PIPELINE_INTERVAL_MS}ms after each complete cycle`);
   const aiWorkerIntervalMs = Number(process.env.AI_WORKER_INTERVAL_MS || 60000) || 60000;
   const aiWorkerBatchSize = Number(process.env.AI_WORKER_BATCH_SIZE || 5) || 5;
   if (process.env.ENABLE_AI_WORKER !== 'false') {
