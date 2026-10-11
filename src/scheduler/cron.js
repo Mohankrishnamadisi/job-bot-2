@@ -78,6 +78,19 @@ async function runJobPipeline() {
   logger.info(`CYCLE_STARTED cycle=${currentCycleNumber} timestamp=${new Date(pipelineStartedAt).toISOString()}`);
 
   try {
+    const pipelineSummary = {
+      scraperJobsFetched: 0,
+      importJobsFetched: 0,
+      sameRunDuplicatesSkipped: 0,
+      existingJobsSkipped: 0,
+      rawJobsInserted: 0,
+      rawJobsUpdated: 0,
+      rawJobInsertFailures: 0,
+      aiQueueAdded: 0,
+      aiQueueInsertFailures: 0,
+      aiQueueStatusUnverified: 0,
+      scraperFailures: 0,
+    };
     const batchSize = scraperBatchSize || 50;
     const scraperTargets = resolveScraperTargets();
     const effectiveScraperBatchSize = batchSize;
@@ -86,17 +99,12 @@ async function runJobPipeline() {
       logger.info('Running company scrapers before import sources');
       logger.info(`Scraper order: ${scraperTargets.join(', ')}`);
 
-      const scraperSummary = {
-        batchCount: 0,
-        totalSavedRawJobs: 0,
-        totalAiLoaded: 0,
-        totalAiCompleted: 0,
-        totalAiFailed: 0,
-        totalDuplicateJobsSkipped: 0,
-      };
-
       for (const target of scraperTargets) {
         const companyStartTime = Date.now();
+        const scraperRunStats = { fetched: 0, failed: 0 };
+        let scraperMetricsRecorded = false;
+        let saveAttempted = false;
+        let saveJobCount = 0;
         const timingStats = {
           startedAt: new Date(companyStartTime).toISOString(),
           pagesFetched: 0,
@@ -127,19 +135,23 @@ async function runJobPipeline() {
 
           try {
             const result = await Promise.race([
-              runScrapers([target], { signal: controller.signal }),
+              runScrapers([target], { signal: controller.signal, stats: scraperRunStats }),
               new Promise((_, reject) => {
                 controller.signal.addEventListener('abort', () => reject(new Error(`Company scraper timed out after ${timeoutMs}ms`)), { once: true });
               }),
             ]);
             scrapedJobs = Array.isArray(result) ? result : [];
+            pipelineSummary.scraperJobsFetched += scraperRunStats.fetched;
+            pipelineSummary.scraperFailures += scraperRunStats.failed;
+            scraperMetricsRecorded = true;
           } finally {
             clearTimeout(companyTimer);
           }
 
           const uniqueScrapedJobs = deduplicateScrapedJobs(scrapedJobs);
+          pipelineSummary.sameRunDuplicatesSkipped += scrapedJobs.length - uniqueScrapedJobs.length;
           timingStats.pagesFetched = 1;
-          timingStats.listingJobsFetched = uniqueScrapedJobs.length;
+          timingStats.listingJobsFetched = scrapedJobs.length;
           timingStats.recentJobs = uniqueScrapedJobs.length;
 
           logger.info(`  Scraped & Deduplicated: ${uniqueScrapedJobs.length} unique jobs`);
@@ -154,6 +166,7 @@ async function runJobPipeline() {
           timingStats.duplicates = duplicateCount;
 
           if (duplicateCount > 0) {
+            pipelineSummary.existingJobsSkipped += duplicateCount;
             logger.info(`  Duplicates skipped: ${duplicateCount}`);
           }
 
@@ -163,6 +176,8 @@ async function runJobPipeline() {
             continue;
           }
 
+          saveJobCount = uniqueJobs.length;
+          saveAttempted = true;
           const result = await saveJobs(uniqueJobs);
           if (result.error) {
             throw result.error;
@@ -170,16 +185,12 @@ async function runJobPipeline() {
 
           const stats = result.stats || {};
           timingStats.newJobsSaved = stats.inserted || 0;
-          const rawJobIds = Array.isArray(result.data)
-            ? result.data.map((row) => row && row.id).filter(Boolean)
-            : [];
-
-          scraperSummary.totalSavedRawJobs += rawJobIds.length;
-          scraperSummary.batchCount += 1;
-
-          if (rawJobIds.length > 0) {
-            logger.info(`    Saved raw jobs: ${rawJobIds.length}`);
-          }
+          pipelineSummary.rawJobsInserted += stats.inserted || 0;
+          pipelineSummary.rawJobsUpdated += stats.updated || 0;
+          pipelineSummary.rawJobInsertFailures += stats.failed || 0;
+          pipelineSummary.aiQueueAdded += stats.aiQueueAdded || 0;
+          pipelineSummary.aiQueueInsertFailures += stats.aiQueueInsertFailed || 0;
+          pipelineSummary.aiQueueStatusUnverified += stats.aiQueueStatusUnverified || 0;
 
           logger.info(`    Prepared: ${stats.prepared || 0}`);
           logger.info(`    New Saved: ${stats.inserted || 0}`);
@@ -188,6 +199,15 @@ async function runJobPipeline() {
 
           logCompanyTiming(target, { ...timingStats, durationMs: Date.now() - companyStartTime, stopReason: timingStats.stopReason || 'completed' });
         } catch (error) {
+          if (!scraperMetricsRecorded) {
+            pipelineSummary.scraperJobsFetched += scraperRunStats.fetched;
+            pipelineSummary.scraperFailures += scraperRunStats.failed;
+          }
+          if (saveAttempted) {
+            pipelineSummary.rawJobInsertFailures += saveJobCount;
+          } else if (scraperRunStats.failed === 0) {
+            pipelineSummary.scraperFailures += 1;
+          }
           if (error && /timed out|timeout/i.test(error.message)) {
             timingStats.stopReason = 'timeout';
           } else {
@@ -224,6 +244,7 @@ async function runJobPipeline() {
 
       try {
         stats = await source.run();
+        pipelineSummary.importJobsFetched += stats?.fetched || stats?.total_fetched || 0;
         logger.info(
           `  Fetched: ${stats?.fetched || 0}, Inserted: ${stats?.inserted || stats?.total_inserted || 0}, Skipped: ${stats?.skipped || stats?.total_skipped || 0}, Failed: ${stats?.failed || stats?.total_failed || 0}`
         );
@@ -248,11 +269,19 @@ async function runJobPipeline() {
         logger.info(`\n  BATCH ${batchNumber}: ${batchJobs.length} job(s)`);
         const result = await saveJobs(batchJobs);
         if (result.error) {
+          pipelineSummary.rawJobInsertFailures += result.stats?.failed || batchJobs.length;
           logger.error(`    ✗ Save failed: ${result.error.message}`);
           continue;
         }
 
         const batchStats = result.stats || {};
+        pipelineSummary.rawJobsInserted += batchStats.inserted || 0;
+        pipelineSummary.rawJobsUpdated += batchStats.updated || 0;
+        pipelineSummary.rawJobInsertFailures += batchStats.failed || 0;
+        pipelineSummary.aiQueueAdded += batchStats.aiQueueAdded || 0;
+        pipelineSummary.aiQueueInsertFailures += batchStats.aiQueueInsertFailed || 0;
+        pipelineSummary.aiQueueStatusUnverified += batchStats.aiQueueStatusUnverified || 0;
+        pipelineSummary.existingJobsSkipped += batchStats.skippedDuplicates || 0;
         logger.info(`    Prepared: ${batchStats.prepared || 0}`);
         logger.info(`    New Saved: ${batchStats.inserted || 0}`);
         logger.info(`    Already Processed: ${batchStats.skippedDuplicates || 0}`);
@@ -267,13 +296,27 @@ async function runJobPipeline() {
     }
 
     logger.info('Import sources completed');
-    logger.info(`Import source summary: batches=${importSummary.batchCount}, saved=${importSummary.totalSavedRawJobs}`);
+    logger.info(`Import source summary: batches=${importSummary.batchCount}, raw rows returned=${importSummary.totalSavedRawJobs}`);
 
     const durationMs = Date.now() - pipelineStartedAt;
+    logger.info('');
+    logger.info('╔════════════════════ JOB SCRAPE SUMMARY ════════════════════╗');
+    logger.info(`║ Scraper jobs found:                 ${String(pipelineSummary.scraperJobsFetched).padStart(6)} ║`);
+    logger.info(`║ Import jobs found:                  ${String(pipelineSummary.importJobsFetched).padStart(6)} ║`);
+    logger.info(`║ Duplicate listings in this run:     ${String(pipelineSummary.sameRunDuplicatesSkipped).padStart(6)} ║`);
+    logger.info(`║ Already-known jobs skipped:         ${String(pipelineSummary.existingJobsSkipped).padStart(6)} ║`);
+    logger.info(`║ New raw jobs saved:                 ${String(pipelineSummary.rawJobsInserted).padStart(6)} ║`);
+    logger.info(`║ Existing raw jobs updated:          ${String(pipelineSummary.rawJobsUpdated).padStart(6)} ║`);
+    logger.info(`║ Added to AI queue (pending):        ${String(pipelineSummary.aiQueueAdded).padStart(6)} ║`);
+    logger.info(`║ Raw-job save failures:              ${String(pipelineSummary.rawJobInsertFailures).padStart(6)} ║`);
+    logger.info(`║ AI queue insert failures:           ${String(pipelineSummary.aiQueueInsertFailures).padStart(6)} ║`);
+    logger.info(`║ AI queue status not verified:       ${String(pipelineSummary.aiQueueStatusUnverified).padStart(6)} ║`);
+    logger.info(`║ Scraper failures:                   ${String(pipelineSummary.scraperFailures).padStart(6)} ║`);
+    logger.info('║ Publishing is reported separately by the AI worker.           ║');
+    logger.info('╚═══════════════════════════════════════════════════════════════╝');
     logger.info(`CYCLE_COMPLETED cycle=${currentCycleNumber} timestamp=${new Date().toISOString()} duration=${durationMs}ms`);
     logger.info('Job pipeline completed');
     logger.info(`Import batches processed: ${importSummary.batchCount}`);
-    logger.info(`Total saved raw jobs: ${importSummary.totalSavedRawJobs}`);
     logger.info(`Pipeline duration ms: ${durationMs}`);
   } catch (error) {
     logger.error(`Scheduled pipeline error: ${error.message}`);

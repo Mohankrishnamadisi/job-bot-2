@@ -284,6 +284,7 @@ async function runAiWorker(options = {}) {
     claimedCount: 0,
     completedCount: 0,
     failedCount: 0,
+    processedRowsWritten: 0,
     aiDurationsMs: [],
   };
 
@@ -500,6 +501,7 @@ async function runAiWorker(options = {}) {
           loggerInstance.error(`  Error Details:`, insertError);
           throw insertError;
         }
+        metrics.processedRowsWritten += 1;
         loggerInstance.info(`  Insert Data:`, insertData);
         loggerInstance.info(`  ✓ Successfully inserted`);
 
@@ -600,17 +602,17 @@ async function runAiWorker(options = {}) {
       }
     }
 
-    loggerInstance.info(`\n╔════════════════════════════════════════════════════════════════╗`);
-    loggerInstance.info(`║ PIPELINE SUMMARY`);
-    loggerInstance.info(`╠════════════════════════════════════════════════════════════════╣`);
-    loggerInstance.info(`║ Jobs Loaded: ${queueRows.length}`);
-    loggerInstance.info(`║ Jobs Completed: ${jobsCompleted}`);
-    loggerInstance.info(`║ Jobs Failed: ${jobsFailed}`);
-    loggerInstance.info(`║ Processing Time: ${Date.now() - startedAt}ms`);
-    loggerInstance.info(`╚════════════════════════════════════════════════════════════════╝\n`);
     const averageAiDurationMs = metrics.aiDurationsMs.length > 0
       ? Math.round(metrics.aiDurationsMs.reduce((sum, duration) => sum + duration, 0) / metrics.aiDurationsMs.length)
       : 0;
+    loggerInstance.info(`\n╔════════════════════ AI PROCESSING SUMMARY ════════════════════╗`);
+    loggerInstance.info(`║ AI queue pending at batch start: ${metrics.pendingCount ?? 'unknown'}`);
+    loggerInstance.info(`║ Jobs picked up for AI:           ${queueRows.length}`);
+    loggerInstance.info(`║ AI completed:                    ${jobsCompleted}`);
+    loggerInstance.info(`║ processed_jobs rows written:     ${metrics.processedRowsWritten}`);
+    loggerInstance.info(`║ AI processing failures:          ${jobsFailed}`);
+    loggerInstance.info(`║ Processing time:                 ${Date.now() - startedAt}ms`);
+    loggerInstance.info(`╚═══════════════════════════════════════════════════════════════╝\n`);
     loggerInstance.info(JSON.stringify({
       event: 'ai_worker_cycle_metrics',
       pendingCount: metrics.pendingCount,
@@ -619,15 +621,17 @@ async function runAiWorker(options = {}) {
       claimedCount: metrics.claimedCount,
       completedCount: metrics.completedCount,
       failedCount: metrics.failedCount,
+      processedRowsWritten: metrics.processedRowsWritten,
       skippedBackoffCount: metrics.skippedBackoffCount,
       averageAiDurationMs,
       batchDurationMs: Date.now() - startedAt,
     }));
 
+    let publishResult = null;
     if (jobsCompleted > 0) {
       loggerInstance.info('✓ Batch complete: publishing pending jobs once');
       try {
-        const publishResult = await publishPendingJobs({ logger: loggerInstance, supabase });
+        publishResult = await publishPendingJobs({ logger: loggerInstance, supabase });
         if (publishResult?.error) {
           loggerInstance.error(`Publisher failed after batch: ${publishResult.error}`);
         } else {
@@ -639,16 +643,32 @@ async function runAiWorker(options = {}) {
           }
         }
       } catch (publishError) {
+        publishResult = { publishedCount: 0, skippedCount: 0, failedCount: 0, error: publishError.message };
         loggerInstance.error(`Publisher failed after batch: ${publishError.message}`);
       }
     } else {
       loggerInstance.info('No jobs completed in this batch; skipping publish step');
     }
 
+    loggerInstance.info('JOBS TABLE PUBLISH SUMMARY');
+    if (publishResult) {
+      loggerInstance.info(`  Newly published to jobs table: ${publishResult.publishedCount || 0}`);
+      loggerInstance.info(`  Already present / skipped: ${publishResult.skippedCount || 0}`);
+      loggerInstance.info(`  Publish failures: ${publishResult.failedCount || 0}`);
+      if (publishResult.error) {
+        loggerInstance.error(`  Publisher error: ${publishResult.error}`);
+      }
+    } else {
+      loggerInstance.info('  Publishing not run in this cycle (no AI jobs completed).');
+    }
+
     return {
       jobsLoaded: queueRows.length,
       jobsCompleted,
       jobsFailed,
+      processedRowsWritten: metrics.processedRowsWritten,
+      publishedCount: publishResult?.publishedCount || 0,
+      publishFailedCount: publishResult?.failedCount || 0,
       processingTimeMs: Date.now() - startedAt,
     };
   } catch (error) {

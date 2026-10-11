@@ -64,7 +64,7 @@ async function runScrapers(urls = [], options = {}) {
     return [];
   }
 
-  const { signal } = options;
+  const { signal, stats } = options;
   const results = [];
 
   for (const item of urls) {
@@ -91,6 +91,9 @@ async function runScrapers(urls = [], options = {}) {
           `Scraper finished for ${key}: pageCount=${stats.pageCount || 0}, listingJobsFetched=${stats.listingJobsFetched ?? jobs.length}, detailJobsFetched=${stats.detailJobsFetched ?? 0}, recentJobs=${stats.recentJobs ?? jobs.length}, skippedOld=${stats.skippedOld ?? 0}, stopReason=${stats.stopReason || 'completed'}`
         );
         results.push(...jobs);
+        if (options.stats) {
+          options.stats.fetched = (options.stats.fetched || 0) + jobs.length;
+        }
         continue;
       }
 
@@ -99,8 +102,14 @@ async function runScrapers(urls = [], options = {}) {
       const recentJobs = jobs.filter((job) => filterJobsWithinRecentCutoff([job], { includeUnknownDate: true }).length > 0);
       logger.info(`Scraper finished for ${item}: jobs=${jobs.length}, recent=${recentJobs.length}, skippedOld=${jobs.length - recentJobs.length}`);
       results.push(...recentJobs);
+      if (options.stats) {
+        options.stats.fetched = (options.stats.fetched || 0) + recentJobs.length;
+      }
     } catch (error) {
       logger.error(`Scraper error for ${item}: ${error.message}`);
+      if (stats) {
+        stats.failed = (stats.failed || 0) + 1;
+      }
     }
   }
 

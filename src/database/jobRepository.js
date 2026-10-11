@@ -317,6 +317,9 @@ async function insertJobs(jobs) {
   let preparedInsertedCount = 0;
   let preparedUpdatedCount = 0;
   let newInsertApplyUrls = [];
+  let aiQueueAdded = 0;
+  let aiQueueInsertFailed = 0;
+  let aiQueueStatusUnverified = 0;
 
   try {
     const applyUrls = preparedJobs
@@ -403,20 +406,25 @@ async function insertJobs(jobs) {
                   .insert(queuePayloads);
 
                 if (queueInsertError) {
+                  aiQueueInsertFailed += queuePayloads.length;
                   logger.warn(`AI queue creation failed: ${queueInsertError.message}`);
                 } else {
+                  aiQueueAdded += queuePayloads.length;
                   logger.info(`AI queue entries created: ${queuePayloads.length}`);
                 }
               }
             } else {
+              aiQueueStatusUnverified += newlyInsertedRawJobs.length;
               logger.warn(`AI queue lookup failed: ${queueLookupError.message}`);
             }
           }
         } else {
+          aiQueueStatusUnverified += newInsertApplyUrls.length;
           logger.warn(`AI queue lookup failed: ${insertedRowsLookupError ? insertedRowsLookupError.message : 'Unable to load newly inserted raw jobs'}`);
         }
       }
     } catch (queueError) {
+      aiQueueInsertFailed += newInsertApplyUrls.length;
       logger.warn(`AI queue creation failed: ${queueError.message}`);
     }
 
@@ -428,8 +436,11 @@ async function insertJobs(jobs) {
         prepared: preparedJobs.length,
         inserted: insertedCount,
         updated: updatedCount,
-          skippedDuplicates: 0,
+        skippedDuplicates: 0,
         failed: 0,
+        aiQueueAdded,
+        aiQueueInsertFailed,
+        aiQueueStatusUnverified,
       },
     };
   } catch (error) {
