@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { scheduleAiWorker } = require('../src/scheduler/cron');
+const { scheduleAiWorker, scheduleDb1Sync } = require('../src/scheduler/cron');
 
 test('AI scheduler skips a trigger while the previous worker cycle is running', async () => {
   let resolveWorker;
@@ -40,6 +40,37 @@ test('AI scheduler skips a trigger while the previous worker cycle is running', 
   resolveWorker();
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(typeof scheduledCallback, 'function');
+
+  scheduler.stop();
+});
+
+test('DB1 sync scheduler repeats after the configured interval', async () => {
+  let syncCalls = 0;
+  let scheduledCallback = null;
+  let scheduledDelay = null;
+  const scheduler = scheduleDb1Sync({
+    intervalMs: 5 * 60 * 60 * 1000,
+    sync: async () => {
+      syncCalls += 1;
+    },
+    loggerInstance: { warn() {}, error() {} },
+    setTimeoutFn(callback, delay) {
+      scheduledCallback = callback;
+      scheduledDelay = delay;
+      return { unref() {} };
+    },
+  });
+
+  assert.equal(syncCalls, 0);
+  assert.equal(scheduledDelay, 5 * 60 * 60 * 1000);
+
+  await scheduledCallback();
+  assert.equal(syncCalls, 1);
+  assert.equal(scheduledDelay, 5 * 60 * 60 * 1000);
+
+  await scheduledCallback();
+  assert.equal(syncCalls, 2);
+  assert.equal(scheduledDelay, 5 * 60 * 60 * 1000);
 
   scheduler.stop();
 });

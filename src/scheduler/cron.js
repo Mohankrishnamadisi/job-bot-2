@@ -5,6 +5,7 @@ const { runScrapers, getRegisteredScraperKeys } = require('../scrapers');
 const { deduplicateJobs } = require('../services/duplicateService');
 const { saveJobs } = require('../database/jobRepository');
 const { runAiWorker } = require('../workers/aiWorker');
+const { syncJobsToDb1 } = require('../sync/syncJobsToDb1');
 
 let importHclJobs = null;
 let importTcsJobs = null;
@@ -22,6 +23,7 @@ try {
 }
 
 const CONTINUOUS_PIPELINE_INTERVAL_MS = Number(process.env.PIPELINE_LOOP_MS || process.env.SCRAPE_INTERVAL_MS || 60 * 60 * 1000) || 60 * 60 * 1000;
+const DEFAULT_DB1_SYNC_INTERVAL_MS = 5 * 60 * 60 * 1000;
 let pipelineRunning = false;
 let cycleNumber = 0;
 
@@ -338,6 +340,12 @@ function scheduleJobs() {
   logger.info(`Continuous pipeline loop enabled; repeating ${CONTINUOUS_PIPELINE_INTERVAL_MS}ms after each complete cycle`);
   const aiWorkerIntervalMs = Number(process.env.AI_WORKER_INTERVAL_MS || 60000) || 60000;
   const aiWorkerBatchSize = Number(process.env.AI_WORKER_BATCH_SIZE || 5) || 5;
+  const configuredDb1SyncIntervalMs = Number(process.env.DB1_SYNC_INTERVAL_MS);
+  const db1SyncIntervalMs = Number.isFinite(configuredDb1SyncIntervalMs) && configuredDb1SyncIntervalMs > 0
+    ? configuredDb1SyncIntervalMs
+    : DEFAULT_DB1_SYNC_INTERVAL_MS;
+  scheduleDb1Sync({ intervalMs: db1SyncIntervalMs });
+  logger.info(`DB2 -> DB1 sync schedule enabled; interval=${db1SyncIntervalMs}ms`);
   if (process.env.ENABLE_AI_WORKER !== 'false') {
     scheduleAiWorker({ batchSize: aiWorkerBatchSize, intervalMs: aiWorkerIntervalMs });
     logger.info(`AI worker schedule enabled; batchSize=${aiWorkerBatchSize}, interval=${aiWorkerIntervalMs}ms`);
@@ -354,6 +362,54 @@ function scheduleJobs() {
     }, CONTINUOUS_PIPELINE_INTERVAL_MS);
   };
   continueLoop().catch((error) => logger.error(`Continuous pipeline loop failed: ${error.message}`));
+}
+
+function scheduleDb1Sync({
+  intervalMs = DEFAULT_DB1_SYNC_INTERVAL_MS,
+  sync = syncJobsToDb1,
+  loggerInstance = logger,
+  setTimeoutFn = setTimeout,
+} = {}) {
+  let running = false;
+  let stopped = false;
+  let timer = null;
+
+  const scheduleNextSync = () => {
+    if (!stopped) {
+      timer = setTimeoutFn(
+        () => runScheduledSync().catch((error) => loggerInstance.error(`DB2 -> DB1 sync loop failed: ${error.message}`)),
+        intervalMs
+      );
+    }
+  };
+
+  const runScheduledSync = async () => {
+    if (stopped) return;
+    if (running) {
+      loggerInstance.warn('DB2 -> DB1 sync already running; skipping overlapping trigger');
+      return;
+    }
+
+    running = true;
+    try {
+      await sync({ logger: loggerInstance });
+    } catch (error) {
+      loggerInstance.error(`Scheduled DB2 -> DB1 sync failed: ${error.message}`);
+    } finally {
+      running = false;
+      scheduleNextSync();
+    }
+  };
+
+  scheduleNextSync();
+
+  return {
+    trigger: runScheduledSync,
+    stop() {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    },
+  };
 }
 
 function scheduleAiWorker({
@@ -403,6 +459,7 @@ function scheduleAiWorker({
 module.exports = {
   runJobPipeline,
   scheduleJobs,
+  scheduleDb1Sync,
   scheduleAiWorker,
   resolveScraperTargets,
 };
